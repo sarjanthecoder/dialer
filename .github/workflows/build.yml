@@ -1,0 +1,58 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find project
+        run: |
+          if [ -f RootAccessDialer.zip ]; then unzip -q -o RootAccessDialer.zip; fi
+          if [ -f RootAccessDialer/package.json ]; then
+            echo "APP_DIR=RootAccessDialer" >> "$GITHUB_ENV"
+          else
+            echo "APP_DIR=." >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: cd "$APP_DIR" && npm install --no-audit --no-fund && npm install expo-asset@~11.0.5 --no-audit --no-fund
+
+      - name: Generate Android project
+        run: cd "$APP_DIR" && CI=1 npx expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK
+        run: cd "$APP_DIR/android" && chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Collect APK
+        run: cp "$APP_DIR/android/app/build/outputs/apk/release/app-release.apk" RootAccessDialer.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RootAccessDialer-apk
+          path: RootAccessDialer.apk
+
+      - name: Publish release (direct APK link)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "apk-${{ github.run_number }}" RootAccessDialer.apk
+          --target "$GITHUB_SHA"
+          --title "RootAccess Dialer APK #${{ github.run_number }}"
+          --notes "Direct APK build"
